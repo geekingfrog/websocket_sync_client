@@ -5,18 +5,17 @@ defmodule WebsocketSyncClient.MixProject do
     [
       app: :websocket_sync_client,
       version: "0.1.0",
+      description: "A synchronous library for websocket operations",
       elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: false,
+      package: package(),
       deps: deps()
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
-    [
-      extra_applications: [:logger]
-    ]
+    []
   end
 
   # Run "mix help deps" to learn about dependencies.
@@ -40,4 +39,12 @@ defmodule WebsocketSyncClient.MixProject do
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp package() do
+    %{
+      licenses: ["MIT"],
+      maintainers: ["Greg Charvet"],
+      links: %{"GitHub" => "https://github.com/geekingfrog/websocket_sync_client"}
+    }
+  end
 end
