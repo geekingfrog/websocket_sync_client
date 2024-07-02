@@ -27,13 +27,8 @@ defmodule WebsocketSyncClient.WsConn do
     end
   end
 
-  def handle_frame({:text, msg}, %{parent: parent} = state) do
+  def handle_frame(msg, %{parent: parent} = state) do
     send(parent, {:received_message, msg})
-    {:ok, state}
-  end
-
-  def handle_frame(_frame, state) do
-    # ignore binary frames
     {:ok, state}
   end
 

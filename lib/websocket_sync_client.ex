@@ -10,6 +10,7 @@ defmodule WebsocketSyncClient do
   defstruct [:pid, :default_timeout]
 
   @opaque client :: %__MODULE__{pid: pid, default_timeout: timeout()}
+  @type message :: {:text, String.t()} | {:binary, binary()}
 
   @doc """
   Connect to the given url.
@@ -30,10 +31,10 @@ defmodule WebsocketSyncClient do
   @doc """
   Send a message to the peer
   """
-  @spec send_message(client, String.t(), :text | :binary | nil) :: :ok | {:error, reason :: term}
-  def send_message(client, msg, type \\ :text) do
+  @spec send_message(client, message) :: :ok | {:error, reason :: term}
+  def send_message(client, msg) do
     try do
-      GenServer.call(client.pid, {:send_message, msg, type})
+      GenServer.call(client.pid, {:send_message, msg})
     catch
       :exit, _ ->
         {:error, :disconnected}
@@ -50,7 +51,7 @@ defmodule WebsocketSyncClient do
   in the calling process' mailbox.
   """
   @spec recv(client, timeout: timeout()) ::
-          {:ok, String.t()} | {:error, reason :: term}
+          {:ok, message} | {:error, reason :: term}
   def recv(client, opts \\ []) do
     # As of OTP24 GenServer.call will drop late messages that arrive after a
     # timeout. So I need to recreate a similar machinery to GenServer.call
@@ -129,9 +130,9 @@ defmodule WebsocketSyncClient do
   end
 
   @impl true
-  def handle_call({:send_message, msg, type}, _from, %{conn: conn} = state) do
+  def handle_call({:send_message, msg}, _from, %{conn: conn} = state) do
     try do
-      case WebSockex.send_frame(conn, {type, msg}) do
+      case WebSockex.send_frame(conn, msg) do
         :ok ->
           {:reply, :ok, state}
 
