@@ -15,8 +15,8 @@ defmodule WebsocketSyncClient do
   @doc """
   Connect to the given url.
   Options:
-    * :ping_interval to send a ping frame every `ping_interval` ms
-    * :default_timeout how long receive_message should wait before any timeout
+    * `:ping_interval` to send a ping frame every `ping_interval` ms.
+    * `:default_timeout` how long `recv/2` should wait before any timeout.
   """
   @spec connect(String.t(), ping_interval: timeout() | nil, default_timeout: timeout() | nil) ::
           {:ok, client}
@@ -29,7 +29,7 @@ defmodule WebsocketSyncClient do
   end
 
   @doc """
-  Send a message to the peer
+  Send a message to the peer.
   """
   @spec send_message(client, message) :: :ok | {:error, reason :: term}
   def send_message(client, msg) do
@@ -42,12 +42,12 @@ defmodule WebsocketSyncClient do
   end
 
   @doc """
-  Receive a text message coming from the peer.
-  Returns immediately if a message has been buffered, otherwise, wait up to :timeout or the
+  Receive a websocket message coming from the peer.
+  Returns immediately if a message has been buffered, otherwise, wait up to `:timeout` or the
   default timeout configured for the client.
-  to disable timeout: set to :infinity
+  to disable timeout: set to `:infinity`.
 
-  In case of a late message, a message of the form {:received, String.t()} will be
+  In case of a late message, a message of the form `{:received, String.t()}` will be
   in the calling process' mailbox.
   """
   @spec recv(client, timeout: timeout()) ::
@@ -84,6 +84,9 @@ defmodule WebsocketSyncClient do
     end
   end
 
+  @doc """
+  Is the client still connected?
+  """
   @spec connected?(client) :: boolean
   def connected?(client) do
     try do

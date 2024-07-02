@@ -10,7 +10,15 @@ defmodule WebsocketSyncClient.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: false,
       package: package(),
-      deps: deps()
+      deps: deps(),
+
+      # Docs
+      source_url: "https://github.com/geekingfrog/websocket_sync_client",
+      homepage_url: "https://github.com/geekingfrog/websocket_sync_client",
+      docs: [
+        # main: "websocket_sync_client",
+        extras: ["README.md"]
+      ]
     ]
   end
 
@@ -32,7 +40,8 @@ defmodule WebsocketSyncClient.MixProject do
       {:plug_cowboy, "~> 2.5", only: :test},
       {:plug, "~> 1.4", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.1", only: [:dev], runtime: false}
+      {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
+      {:ex_doc, "~> 0.31", only: :dev, runtime: false}
     ]
   end
 
