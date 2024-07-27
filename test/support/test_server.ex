@@ -51,7 +51,7 @@ defmodule WebsocketSyncClient.TestSocket do
 
   @impl true
   def init(request, _state) do
-    {:cowboy_websocket, request, nil}
+    {:cowboy_websocket, request, %{request: request}}
   end
 
   @impl true
@@ -76,6 +76,11 @@ defmodule WebsocketSyncClient.TestSocket do
     resp = for i <- 1..n, do: {:text, "coucou #{i}"}
     send(self(), :disconnect)
     {:reply, resp, :disconnected}
+  end
+
+  @impl true
+  def websocket_handle({:text, "echostate"}, state) do
+    {:reply, {:binary, :erlang.term_to_binary(state)}, state}
   end
 
   @impl true

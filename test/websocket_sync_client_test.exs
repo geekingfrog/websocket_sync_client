@@ -79,4 +79,24 @@ defmodule WebsocketSyncClientTest do
     {:ok, {:text, "hello"}} = WebsocketSyncClient.recv(client)
     {:error, :disconnected} = WebsocketSyncClient.recv(client)
   end
+
+  test "pass custom headers", %{url: url} do
+    {:ok, client} =
+      WebsocketSyncClient.connect(url,
+        connection_options: [
+          extra_headers: [
+            {
+              "Sec-WebSocket-Protocol",
+              "custom-proto"
+            }
+          ]
+        ]
+      )
+
+    :ok = WebsocketSyncClient.send_message(client, {:text, "echostate"})
+    {:ok, {:binary, conn_state}} = WebsocketSyncClient.recv(client)
+    state = :erlang.binary_to_term(conn_state)
+    assert %{"sec-websocket-protocol" => "custom-proto"} = state[:request][:headers]
+    WebsocketSyncClient.disconnect(client)
+  end
 end

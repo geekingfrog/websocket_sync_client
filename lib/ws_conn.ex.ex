@@ -8,13 +8,18 @@ defmodule WebsocketSyncClient.WsConn do
   Connect to the given url.
   Can provide :ping_interval to send a ping frame every `ping_interval` ms
   """
-  @spec connect(String.t(), pid, ping_interval: timeout() | nil) :: GenServer.on_start()
+  @spec connect(String.t(), pid,
+          ping_interval: timeout() | nil,
+          connection_options: [WebSockex.Conn.connection_option()] | nil
+        ) :: GenServer.on_start()
   def connect(url, parent, opts \\ []) do
     state = %{
       parent: parent
     }
 
-    case WebSockex.start_link(url, __MODULE__, state) do
+    conn_opts = Keyword.get(opts, :connection_options)
+
+    case WebSockex.start_link(url, __MODULE__, state, conn_opts || []) do
       {:ok, pid} ->
         if opts[:ping_interval] do
           :timer.send_interval(opts[:ping_interval], :ping)

@@ -18,7 +18,11 @@ defmodule WebsocketSyncClient do
     * `:ping_interval` to send a ping frame every `ping_interval` ms.
     * `:default_timeout` how long `recv/2` should wait before any timeout.
   """
-  @spec connect(String.t(), ping_interval: timeout() | nil, default_timeout: timeout() | nil) ::
+  @spec connect(String.t(),
+          ping_interval: timeout() | nil,
+          default_timeout: timeout() | nil,
+          connection_options: [WebSockex.Conn.connection_option()] | nil
+        ) ::
           {:ok, client}
   def connect(url, opts \\ []) do
     with {:ok, pid} <- GenServer.start(__MODULE__, [url: url] ++ opts) do
@@ -111,7 +115,10 @@ defmodule WebsocketSyncClient do
     Process.flag(:trap_exit, true)
     url = Keyword.fetch!(opts, :url)
 
-    case WebsocketSyncClient.WsConn.connect(url, self(), ping_interval: opts[:ping_interval]) do
+    case WebsocketSyncClient.WsConn.connect(url, self(),
+           ping_interval: opts[:ping_interval],
+           connection_options: opts[:connection_options]
+         ) do
       {:ok, pid} ->
         state = %{
           received_messages: :queue.new(),
