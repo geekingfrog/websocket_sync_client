@@ -199,6 +199,8 @@ defmodule WebsocketSyncClient do
 
   @impl true
   def handle_cast(:disconnect, state) do
+    GenServer.cast(state.conn, :close)
+
     final_state = %{
       state
       | conn_state: :disconnected,

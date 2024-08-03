@@ -44,4 +44,8 @@ defmodule WebsocketSyncClient.WsConn do
   def handle_info(:ping, state) do
     {:reply, :ping, state}
   end
+
+  def handle_info(:close, state) do
+    {:close, state}
+  end
 end
