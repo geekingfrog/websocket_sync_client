@@ -5,11 +5,12 @@ defmodule WebsocketSyncClient do
   """
 
   use GenServer
+  require Logger
 
-  @enforce_keys [:pid, :default_timeout]
-  defstruct [:pid, :default_timeout]
+  @enforce_keys [:pid]
+  defstruct [:pid]
 
-  @opaque client :: %__MODULE__{pid: pid, default_timeout: timeout()}
+  @opaque client :: %__MODULE__{pid: pid}
   @type message :: {:text, String.t()} | {:binary, binary()}
 
   @doc """
@@ -26,8 +27,7 @@ defmodule WebsocketSyncClient do
           {:ok, client}
   def connect(url, opts \\ []) do
     with {:ok, pid} <- GenServer.start(__MODULE__, [url: url] ++ opts) do
-      Process.monitor(pid)
-      client = %__MODULE__{pid: pid, default_timeout: Keyword.get(opts, :default_timeout, 10_000)}
+      client = %__MODULE__{pid: pid}
       {:ok, client}
     end
   end
@@ -50,42 +50,15 @@ defmodule WebsocketSyncClient do
   Returns immediately if a message has been buffered, otherwise, wait up to `:timeout` or the
   default timeout configured for the client.
   to disable timeout: set to `:infinity`.
-
-  In case of a late message, a message of the form `{:received, String.t()}` will be
-  in the calling process' mailbox.
   """
   @spec recv(client, timeout: timeout()) ::
           {:ok, message} | {:error, reason :: term}
   def recv(client, opts \\ []) do
-    # As of OTP24 GenServer.call will drop late messages that arrive after a
-    # timeout. So I need to recreate a similar machinery to GenServer.call
-    # to avoid dropping messages. The downside is that they'll polute the
-    # mailbox of the calling process
-    receive do
-      {:received, resp} -> resp
-    after
-      0 -> do_recv(client, opts)
-    end
-  end
-
-  defp do_recv(client, opts) do
-    timeout = Keyword.get(opts, :timeout, client.default_timeout)
-
-    mon_ref = Process.monitor(client.pid)
-    GenServer.cast(client.pid, {:receive_message, self()})
-
-    receive do
-      {:received, resp} ->
-        Process.demonitor(mon_ref, [:flush])
-        resp
-
-      {:DOWN, ^mon_ref, :process, _pid, _reason} ->
-        {:error, :disconnected}
-    after
-      timeout ->
-        Process.demonitor(mon_ref, [:flush])
-        {:error, :timeout}
-    end
+    # the timeout is handled by the proxy itself to avoid request cancellation
+    # leading to lost messages
+    GenServer.call(client.pid, {:receive_message, opts}, :infinity)
+  catch
+    :exit, _ -> {:error, :disconnected}
   end
 
   @doc """
@@ -110,139 +83,84 @@ defmodule WebsocketSyncClient do
   end
 
   @impl true
-  def init(opts \\ []) do
-    # def connect(url, opts \\ []) do
-    Process.flag(:trap_exit, true)
-    url = Keyword.fetch!(opts, :url)
+  def init(opts) do
+    timeout = Keyword.get(opts, :default_timeout, 10_000)
+    {:ok, pid} = GenServer.start_link(WebsocketSyncClient.WsProxy, opts)
+    {:ok, %{proxy: pid, pending: nil, timeout: timeout, msg_buf: :queue.new()}}
+  end
 
-    case WebsocketSyncClient.WsConn.connect(url, self(),
-           ping_interval: opts[:ping_interval],
-           connection_options: opts[:connection_options]
-         ) do
-      {:ok, pid} ->
-        state = %{
-          received_messages: :queue.new(),
-          awaiting_replies: :queue.new(),
-          conn: pid,
-          conn_state: :connected
-        }
+  @impl true
+  def handle_call({:send_message, msg}, _from, state) do
+    resp = GenServer.call(state.proxy, {:send_message, msg})
+    {:reply, resp, state}
+  end
 
-        {:ok, state}
+  @impl true
+  def handle_call(:connected?, _from, state) do
+    {:reply, GenServer.call(state.proxy, :connected?), state}
+  end
 
-      {:error, err} ->
-        {:stop, err}
+  @impl true
+  def handle_call({:receive_message, opts}, _from, state) do
+    case :queue.out(state.msg_buf) do
+      {{:value, msg}, q} -> {:reply, msg, %{state | msg_buf: q}}
+      _ -> do_recv(opts, state)
     end
-  end
-
-  @impl true
-  def handle_call({:send_message, _}, _from, %{conn_state: :disconnected} = state) do
-    {:reply, {:error, :disconnected}, state}
-  end
-
-  @impl true
-  def handle_call({:send_message, msg}, _from, %{conn: conn} = state) do
-    try do
-      case WebSockex.send_frame(conn, msg) do
-        :ok ->
-          {:reply, :ok, state}
-
-        {:error, %WebSockex.NotConnectedError{}} ->
-          reply_disconnected(state)
-      end
-    catch
-      # consider any error fatal and disconnect
-      _, _ ->
-        Process.exit(conn, :normal)
-        reply_disconnected(state)
-    end
-  end
-
-  @impl true
-  def handle_call(:connected?, _from, %{conn_state: conn_state} = state) do
-    {:reply, conn_state != :disconnected, state}
-  end
-
-  @impl true
-  def handle_info(
-        {:received_message, msg},
-        %{received_messages: q, awaiting_replies: awaiting} = state
-      ) do
-    case :queue.out(awaiting) do
-      {:empty, _} ->
-        {:noreply, %{state | received_messages: :queue.in(msg, q)}}
-
-      {{:value, from}, awaiting} ->
-        send(from, {:received, {:ok, msg}})
-        {:noreply, %{state | awaiting_replies: awaiting}}
-    end
-  end
-
-  def handle_info({:EXIT, conn_pid, _reason}, %{conn: conn, awaiting_replies: awaiting} = state)
-      when conn == conn_pid do
-    # immediately send a response to any waiting client
-    :queue.fold(
-      fn from, _acc ->
-        send(from, {:received, {:error, :disconnected}})
-        nil
-      end,
-      nil,
-      awaiting
-    )
-
-    {:noreply,
-     %{
-       state
-       | conn_state: :disconnected,
-         awaiting_replies: :queue.new()
-     }}
   end
 
   @impl true
   def handle_cast(:disconnect, state) do
-    GenServer.cast(state.conn, :close)
-
-    final_state = %{
-      state
-      | conn_state: :disconnected,
-        received_messages: :queue.new(),
-        awaiting_replies: :queue.new()
-    }
-
-    {:stop, :normal, final_state}
+    GenServer.cast(state.proxy, :disconnect)
+    {:noreply, state}
   end
 
+  # I do not know why, when running the test, this genserver gets this message
+  # There doesn't seem to be any monitor setup or trap.
+  # So silence the warning by implementing the handler
   @impl true
-  def handle_cast(
-        {:receive_message, from},
-        %{conn_state: :disconnected, received_messages: buf} = state
-      ) do
-    case :queue.out(buf) do
-      {:empty, _} ->
-        send(from, {:received, {:error, :disconnected}})
-        {:noreply, state}
+  def handle_info({:DOWN, _ref, :process, pid, :normal}, state)
+      when state.proxy == pid,
+      do: {:noreply, state}
 
-      {{:value, msg}, new_buf} ->
-        send(from, {:received, {:ok, msg}})
-        {:noreply, %{state | received_messages: new_buf}}
-    end
+  # handle late responses
+  def handle_info(msg, state) when state.pending != nil do
+    state =
+      case :gen_server.check_response(msg, state.pending) do
+        {:reply, resp} ->
+          Map.update!(state, :msg_buf, &:queue.in(resp, &1))
+
+        _ ->
+          state
+      end
+
+    {:noreply, state}
   end
 
-  @impl true
-  def handle_cast(
-        {:receive_message, from},
-        %{received_messages: buf, awaiting_replies: awaiting} = state
-      ) do
-    case :queue.out(buf) do
-      {:empty, _} ->
-        {:noreply, %{state | awaiting_replies: :queue.in(from, awaiting)}}
+  defp do_recv(opts, state) do
+    req =
+      case state.pending do
+        nil -> :gen_server.send_request(state.proxy, :receive_message)
+        req -> req
+      end
 
-      {{:value, msg}, new_buf} ->
-        send(from, {:received, {:ok, msg}})
-        {:noreply, %{state | received_messages: new_buf}}
+    timeout = Keyword.get(opts, :timeout, state.timeout)
+
+    case :gen_server.wait_response(req, timeout) do
+      :timeout ->
+        {:reply, {:error, :timeout}, %{state | pending: req}}
+
+      {:error, {:normal, _pid}} ->
+        {:stop, :normal, {:error, :disconnected}, %{state | pending: req}}
+
+      {:error, {:noproc, _pid}} ->
+        {:stop, :normal, {:error, :disconnected}, %{state | pending: req}}
+
+      {:error, err} ->
+        Logger.info("ws waiting response error: #{inspect(err)}")
+        {:stop, :error, {:error, :disconnected}, %{state | pending: req}}
+
+      {:reply, resp} ->
+        {:reply, resp, %{state | pending: nil}}
     end
-  end
-
-  defp reply_disconnected(state) do
-    {:reply, {:error, :disconnected}, %{state | conn_state: :disconnected}}
   end
 end
