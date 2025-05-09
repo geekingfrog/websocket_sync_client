@@ -43,6 +43,19 @@ defmodule WebsocketSyncClientTest do
     {:ok, {:text, "late"}} = WebsocketSyncClient.recv(client)
   end
 
+  test "correctly reset request after a timeout", %{url: url} do
+    client = setup_client(url)
+    {:error, :timeout} = WebsocketSyncClient.recv(client, timeout: 1)
+    :ok = WebsocketSyncClient.send_message(client, {:text, "echo msg1"})
+    :ok = WebsocketSyncClient.send_message(client, {:text, "echo msg2"})
+    :timer.sleep(5)
+    {:ok, {:text, "msg1"}} = WebsocketSyncClient.recv(client)
+    {:ok, {:text, "msg2"}} = WebsocketSyncClient.recv(client)
+    {:error, :timeout} = WebsocketSyncClient.recv(client, timeout: 1)
+    :ok = WebsocketSyncClient.send_message(client, {:text, "delayed-echo msg 2"})
+    {:ok, {:text, "msg 2"}} = WebsocketSyncClient.recv(client)
+  end
+
   test "messages arriving late are buffered", %{url: url} do
     client = setup_client(url)
     {:error, :timeout} = WebsocketSyncClient.recv(client, timeout: 10)
@@ -94,7 +107,7 @@ defmodule WebsocketSyncClientTest do
 
   test "can still get buffered messages after server disconnects client", %{url: url} do
     client = setup_client(url)
-    :ok = WebsocketSyncClient.send_message(client, {:text, "echo hello"})
+    :ok = WebsocketSyncClient.send_message(client, {:text, "delayed-echo hello"})
     :ok = WebsocketSyncClient.send_message(client, {:text, "disconnect"})
     {:ok, {:text, "hello"}} = WebsocketSyncClient.recv(client)
     {:error, :disconnected} = WebsocketSyncClient.recv(client)

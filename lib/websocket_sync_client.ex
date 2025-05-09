@@ -103,8 +103,11 @@ defmodule WebsocketSyncClient do
   @impl true
   def handle_call({:receive_message, opts}, _from, state) do
     case :queue.out(state.msg_buf) do
-      {{:value, msg}, q} -> {:reply, msg, %{state | msg_buf: q}}
-      _ -> do_recv(opts, state)
+      {{:value, msg}, q} ->
+        {:reply, msg, %{state | msg_buf: q}}
+
+      _ ->
+        do_recv(opts, state)
     end
   end
 
@@ -127,7 +130,9 @@ defmodule WebsocketSyncClient do
     state =
       case :gen_server.check_response(msg, state.pending) do
         {:reply, resp} ->
-          Map.update!(state, :msg_buf, &:queue.in(resp, &1))
+          state
+          |> Map.update!(:msg_buf, &:queue.in(resp, &1))
+          |> Map.replace!(:pending, nil)
 
         _ ->
           state

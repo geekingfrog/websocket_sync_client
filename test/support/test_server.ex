@@ -79,6 +79,17 @@ defmodule WebsocketSyncClient.TestSocket do
   end
 
   @impl true
+  def websocket_handle({:text, "delaycount " <> n}, state) do
+    {n, ""} = Integer.parse(n)
+
+    for i <- 1..n do
+      :timer.send_after(i * 10, {:delayed_echo, "coucou #{i}"})
+    end
+
+    {:ok, state}
+  end
+
+  @impl true
   def websocket_handle({:text, "echostate"}, state) do
     {:reply, {:binary, :erlang.term_to_binary(state)}, state}
   end
