@@ -93,6 +93,9 @@ defmodule WebsocketSyncClient do
   def handle_call({:send_message, msg}, _from, state) do
     resp = GenServer.call(state.proxy, {:send_message, msg})
     {:reply, resp, state}
+  catch
+    :exit, _ ->
+      {:reply, {:error, :disconnected}, state}
   end
 
   @impl true
