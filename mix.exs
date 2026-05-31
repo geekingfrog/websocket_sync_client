@@ -29,7 +29,7 @@ defmodule WebsocketSyncClient.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:websockex, "~> 0.5.0", hex: :websockex_wt},
+      {:websockex, "~> 0.5.1"},
       {:cowboy, "~> 2.9", only: :test},
       {:plug_cowboy, "~> 2.5", only: :test},
       {:plug, "~> 1.4", only: :test},
